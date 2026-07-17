@@ -66,6 +66,58 @@ console.log(result.snapshot.state); // active
 
 Actions and guards may be synchronous or asynchronous. Actions return a partial context update; updates are merged in execution order. Execution order is source `exit`, transition actions, then target `entry`. Missing implementations throw by default, or can be tolerated with `{ strictImplementations: false }`.
 
+### Register actions and guards
+
+Register implementations by name in the second argument to `createMachine`. Each key must match the string or `type` used by an action or guard reference in the JSON definition. Implementations can be declared separately and reused across machines:
+
+```ts
+import definition from "./access-control.json" with { type: "json" };
+import {
+  createMachine,
+  type Action,
+  type Guard,
+  type Implementations,
+  type StateMachineDefinition
+} from "json-state-machine";
+
+type Context = { access: boolean; audit: string[] };
+type Event = { type: "APPROVE" | "REVOKE"; actor: string };
+
+const hasRole: Guard<Context, Event> = async (_context, event, meta) => {
+  const role = await Promise.resolve(event.actor === "alice" ? "administrator" : "user");
+  return role === meta.params.role;
+};
+
+const recordApproval: Action<Context, Event> = (context, event, meta) => ({
+  audit: [
+    ...context.audit,
+    `${event.actor} approved ${meta.source} -> ${meta.target}`
+  ]
+});
+
+const provideAccess: Action<Context, Event> = async () => {
+  await Promise.resolve(); // perform application-specific provisioning here
+  return { access: true };
+};
+
+const implementations: Implementations<Context, Event> = {
+  guards: { hasRole },
+  actions: {
+    recordApproval,
+    provideAccess,
+    removeAccess: () => ({ access: false })
+  }
+};
+
+const machine = createMachine<Context, Event>(
+  definition as StateMachineDefinition,
+  implementations,
+  { access: false, audit: [] }
+);
+```
+
+For a reference such as `{ "type": "hasRole", "params": { "role": "administrator" } }`, the runtime invokes the `hasRole` guard and exposes `role` through `meta.params`. String references such as `"provideAccess"` use the same registration lookup but have an empty parameter object.
+
 ## User-defined context
 
 Context is application-owned data carried alongside the machine state. It can contain any structured information your application needs, such as request identifiers, users, tenants, accumulated results, or domain data. The machine passes the current context to every guard and action:
