@@ -78,6 +78,8 @@ export interface Implementations<Context, Event> {
 export interface MachineOptions {
   strictImplementations?: boolean;
   twoPhaseCommit?: boolean;
+  /** Enable optional OpenTelemetry spans, or customize their tracer name. Enabled by default when the API is installed. */
+  telemetry?: boolean | { tracerName?: string };
 }
 
 export interface TransitionResult<Context> {

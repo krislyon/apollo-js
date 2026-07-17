@@ -10,7 +10,7 @@ npm run build
 npm test
 ```
 
-The package has no runtime dependencies and targets Node.js 18 or later.
+The package has no required runtime dependencies and targets Node.js 18 or later.
 
 ## Define a model in JSON
 
@@ -161,6 +161,16 @@ The lifecycle is:
 4. If preparation or commit fails, invoke all available `rollback` callbacks in reverse preparation order and leave machine state and context unchanged.
 
 When `twoPhaseCommit` is enabled, action references resolve only through `transactionalActions`; ordinary `actions` are not executed. A prepared action may omit `commit` or `rollback` when it only stages an internal context update. Preparation should avoid irreversible work, and rollback callbacks should be idempotent because the runtime cannot guarantee atomicity in an external system. If rollback itself fails, the thrown `ActionExecutionError` contains an `AggregateError` cause with the original and rollback failures.
+
+## OpenTelemetry
+
+When `@opentelemetry/api` is installed, the runtime automatically creates nested spans for every transition attempt, guard evaluation, and action execution. Spans include the machine id, event, source and target states, behavior name, action phase, and outcome. Exceptions are recorded and mark their span as an error. The API's no-op provider keeps this safe when no SDK is configured.
+
+```sh
+npm install @opentelemetry/api
+```
+
+Configure an OpenTelemetry SDK in the application before using the machine. To opt out, pass `{ telemetry: false }` in the machine options. A custom tracer name can be set with `{ telemetry: { tracerName: "my-service.state-machines" } }`.
 
 ## User-defined context
 
