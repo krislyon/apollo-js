@@ -59,13 +59,25 @@ export type ActionResult<Context> = void | Context | Partial<Context>;
 export type Action<Context, Event> =
   (context: Readonly<Context>, event: Event, meta: ExecutionMeta<Context, Event>) => ActionResult<Context> | Promise<ActionResult<Context>>;
 
+export interface PreparedAction<Context> {
+  update?: Context | Partial<Context>;
+  commit?: () => void | Promise<void>;
+  rollback?: () => void | Promise<void>;
+}
+
+export type TransactionalAction<Context, Event> =
+  (context: Readonly<Context>, event: Event, meta: ExecutionMeta<Context, Event>) =>
+    PreparedAction<Context> | Promise<PreparedAction<Context>>;
+
 export interface Implementations<Context, Event> {
   guards?: Record<string, Guard<Context, Event>>;
   actions?: Record<string, Action<Context, Event>>;
+  transactionalActions?: Record<string, TransactionalAction<Context, Event>>;
 }
 
 export interface MachineOptions {
   strictImplementations?: boolean;
+  twoPhaseCommit?: boolean;
 }
 
 export interface TransitionResult<Context> {

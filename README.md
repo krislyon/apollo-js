@@ -64,7 +64,9 @@ const result = await machine.send({ type: "APPROVE", actor: "alice" });
 console.log(result.snapshot.state); // active
 ```
 
-Actions and guards may be synchronous or asynchronous. Actions return a partial context update; updates are merged in execution order. Execution order is source `exit`, transition actions, then target `entry`. Missing implementations throw by default, or can be tolerated with `{ strictImplementations: false }`.
+Actions and guards may be synchronous or asynchronous. Every guard for a candidate is evaluated before any action for that transition. If a guard returns `false`, the candidate is rejected and its source `exit`, transition, and target `entry` actions do not run. Once a candidate passes, action order is source `exit`, transition actions, then target `entry`.
+
+Ordinary actions return a partial context update; updates are merged in execution order. Internal state and context are published only after all actions succeed. Missing implementations throw by default, or can be tolerated with `{ strictImplementations: false }`.
 
 ### Register actions and guards
 
@@ -117,6 +119,48 @@ const machine = createMachine<Context, Event>(
 ```
 
 For a reference such as `{ "type": "hasRole", "params": { "role": "administrator" } }`, the runtime invokes the `hasRole` guard and exposes `role` through `meta.params`. String references such as `"provideAccess"` use the same registration lookup but have an empty parameter object.
+
+## Optional two-phase actions
+
+Ordinary actions cannot automatically undo external side effects. For transitions that need coordinated external changes, enable two-phase commit and register each referenced action under `transactionalActions`:
+
+```ts
+const machine = createMachine<Context, Event>(definition, {
+  guards: { hasRole },
+  transactionalActions: {
+    recordApproval: context => {
+      // Prepare a reversible operation. Later preparations see this update.
+      return {
+        update: { audit: [...context.audit, "approved"] },
+        commit: async () => {
+          await auditStore.insert("approved");
+        },
+        rollback: async () => {
+          await auditStore.remove("approved");
+        }
+      };
+    },
+    provideAccess: () => ({
+      update: { access: true },
+      commit: async () => {
+        await accessService.grant();
+      },
+      rollback: async () => {
+        await accessService.revoke();
+      }
+    })
+  }
+}, { access: false, audit: [] }, { twoPhaseCommit: true });
+```
+
+The lifecycle is:
+
+1. Evaluate guards. No action preparation starts unless a transition candidate passes.
+2. Prepare every source `exit`, transition, and target `entry` action in declaration order. Context updates are staged, so later preparations see earlier updates.
+3. After every preparation succeeds, invoke each `commit` callback in order.
+4. If preparation or commit fails, invoke all available `rollback` callbacks in reverse preparation order and leave machine state and context unchanged.
+
+When `twoPhaseCommit` is enabled, action references resolve only through `transactionalActions`; ordinary `actions` are not executed. A prepared action may omit `commit` or `rollback` when it only stages an internal context update. Preparation should avoid irreversible work, and rollback callbacks should be idempotent because the runtime cannot guarantee atomicity in an external system. If rollback itself fails, the thrown `ActionExecutionError` contains an `AggregateError` cause with the original and rollback failures.
 
 ## User-defined context
 
@@ -183,4 +227,4 @@ The analyzer reports terminal paths that retain a resource, releases without a m
 
 ## Scope
 
-This first version implements flat finite state machines, ordered guarded transitions, entry/exit/transition actions, immutable snapshots, Mermaid/DOT output, and finite resource-closure analysis. Hierarchical and parallel states, persistence adapters, delayed events, and invoked services are intentionally left for later extensions.
+This first version implements flat finite state machines, ordered guarded transitions, entry/exit/transition actions, optional two-phase action commit, immutable snapshots, Mermaid/DOT output, and finite resource-closure analysis. Hierarchical and parallel states, persistence adapters, delayed events, and invoked services are intentionally left for later extensions.
